@@ -27,6 +27,12 @@ type PublishVideoContent struct {
 func NewPublishVideoAction(page *rod.Page) (*PublishAction, error) {
 	pp := page.Timeout(300 * time.Second)
 
+	applySiteLocale(pp)
+
+	if err := ensureCreatorSession(pp); err != nil {
+		return nil, err
+	}
+
 	if err := pp.Navigate(Site().PublishURL); err != nil {
 		return nil, errors.Wrap(err, "导航到发布页面失败")
 	}

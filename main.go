@@ -19,9 +19,11 @@ func main() {
 		headless bool
 		port     string
 		site     string // 站点: xiaohongshu | rednote
+		token    string
 	)
 	flag.BoolVar(&headless, "headless", true, "是否无头模式")
 	flag.StringVar(&port, "port", ":18060", "端口")
+	flag.StringVar(&token, "token", "", "鉴权 Token，留空则读取 AUTH_TOKEN")
 	defaultSite := os.Getenv("XHS_SITE")
 	if defaultSite == "" {
 		defaultSite = os.Getenv("SITE")
@@ -31,6 +33,9 @@ func main() {
 	}
 	flag.StringVar(&site, "site", defaultSite, "站点: xiaohongshu | rednote (也可通过环境变量 XHS_SITE/SITE 设置)")
 	flag.Parse()
+	if token == "" {
+		token = os.Getenv("AUTH_TOKEN")
+	}
 
 	if err := xiaohongshu.SetSite(site); err != nil {
 		logrus.Fatalf("站点配置错误: %v", err)
@@ -56,7 +61,7 @@ func main() {
 	xiaohongshuService := NewXiaohongshuService()
 
 	// 创建并启动应用服务器
-	appServer := NewAppServer(xiaohongshuService)
+	appServer := NewAppServer(xiaohongshuService, token)
 	if err := appServer.Start(port); err != nil {
 		logrus.Fatalf("failed to run server: %v", err)
 	}
