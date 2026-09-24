@@ -103,6 +103,10 @@ func (s *XiaohongshuService) DeleteCookies(ctx context.Context) error {
 
 // CheckLoginStatus 检查登录状态
 func (s *XiaohongshuService) CheckLoginStatus(ctx context.Context) (*LoginStatusResponse, error) {
+	// 如果后台正有扫码会话在等待确认（用户刚在手机扫完但 cookie 仍在落盘途中），
+	// 短暂等待扫码完成信号（最多 8 秒），彻底消除扫码后立即查状态导致的竞态假阴性。
+	_ = s.logins.waitIfActive(ctx, 8 * time.Second)
+
 	b := newBrowser()
 	defer b.Close()
 
@@ -193,6 +197,7 @@ func (s *XiaohongshuService) waitScanInBackground(
 				return
 			}
 			logrus.Infof("扫码登录成功，cookies 已保存，会话 #%d", seq)
+			s.logins.notifySuccess(seq)
 			return
 		}
 

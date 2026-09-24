@@ -1,6 +1,10 @@
 package main
 
-import "sync"
+import (
+	"context"
+	"sync"
+	"time"
+)
 
 // loginSessions 管理「已发出二维码、还在等扫码」的登录会话。
 //
@@ -8,9 +12,11 @@ import "sync"
 // 但没有任何东西拦着重复调用，于是每调一次就多一个浏览器活到超时为止。
 // 这里的约束是：同一时刻只保留一个待扫码会话，开新的就把旧的关掉。
 type loginSessions struct {
-	mu     sync.Mutex
-	seq    uint64
-	cancel func()
+	mu        sync.Mutex
+	seq       uint64
+	cancel    func()
+	successCh chan struct{}
+	doneCh    chan struct{}
 }
 
 // start 结束上一个待扫码会话（如果有），登记新的，返回本次会话的序号。
@@ -21,6 +27,8 @@ func (l *loginSessions) start(cancel func()) uint64 {
 	l.seq++
 	seq := l.seq
 	l.cancel = cancel
+	l.successCh = make(chan struct{})
+	l.doneCh = make(chan struct{})
 	l.mu.Unlock()
 
 	// 放到锁外调用：取消动作会触发对方 goroutine 的收尾，避免相互等待
@@ -28,6 +36,48 @@ func (l *loginSessions) start(cancel func()) uint64 {
 		prev()
 	}
 	return seq
+}
+
+// notifySuccess 扫码成功且 cookies 落盘后通知等待者。
+func (l *loginSessions) notifySuccess(seq uint64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.seq == seq && l.successCh != nil {
+		select {
+		case <-l.successCh:
+		default:
+			close(l.successCh)
+		}
+	}
+}
+
+// waitIfActive 如果当前有等待扫码的会话，且未完成，允许等待最多 timeout。
+// 若在此期间扫码成功并保存了 cookie，返回 true；若会话结束未成功、超时或 ctx 取消则返回 false。
+func (l *loginSessions) waitIfActive(ctx context.Context, timeout time.Duration) bool {
+	l.mu.Lock()
+	successCh := l.successCh
+	doneCh := l.doneCh
+	active := l.cancel != nil
+	l.mu.Unlock()
+
+	if !active || successCh == nil {
+		return false
+	}
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case <-successCh:
+		return true
+	case <-doneCh:
+		return false
+	case <-timer.C:
+		return false
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // finish 会话自己结束时清理登记。仅当它仍是当前会话才清，
@@ -38,5 +88,12 @@ func (l *loginSessions) finish(seq uint64) {
 
 	if l.seq == seq {
 		l.cancel = nil
+		if l.doneCh != nil {
+			select {
+			case <-l.doneCh:
+			default:
+				close(l.doneCh)
+			}
+		}
 	}
 }

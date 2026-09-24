@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -75,5 +77,67 @@ func TestLoginSessions(t *testing.T) {
 		wg.Wait()
 
 		assert.Len(t, seen, n, "序号必须唯一，否则 finish 会误清别人的登记")
+	})
+
+	t.Run("无活跃会话时 waitIfActive 立即返回 false", func(t *testing.T) {
+		var l loginSessions
+		start := time.Now()
+		ok := l.waitIfActive(context.Background(), 2*time.Second)
+		assert.False(t, ok)
+		assert.True(t, time.Since(start) < 100*time.Millisecond)
+	})
+
+	t.Run("活跃会话扫码成功后 waitIfActive 收到通知返回 true", func(t *testing.T) {
+		var l loginSessions
+		seq := l.start(func() {})
+
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			l.notifySuccess(seq)
+		}()
+
+		ok := l.waitIfActive(context.Background(), 2*time.Second)
+		assert.True(t, ok)
+	})
+
+	t.Run("会话未扫码结束时 waitIfActive 提前唤醒返回 false", func(t *testing.T) {
+		var l loginSessions
+		seq := l.start(func() {})
+
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			l.finish(seq)
+		}()
+
+		start := time.Now()
+		ok := l.waitIfActive(context.Background(), 2*time.Second)
+		assert.False(t, ok)
+		assert.True(t, time.Since(start) < 500*time.Millisecond, "会话结束后应立刻唤醒，无需等满超时")
+	})
+
+	t.Run("waitIfActive 超时返回 false", func(t *testing.T) {
+		var l loginSessions
+		_ = l.start(func() {})
+
+		start := time.Now()
+		ok := l.waitIfActive(context.Background(), 100*time.Millisecond)
+		assert.False(t, ok)
+		assert.True(t, time.Since(start) >= 90*time.Millisecond)
+	})
+
+	t.Run("waitIfActive 响应 ctx 取消", func(t *testing.T) {
+		var l loginSessions
+		_ = l.start(func() {})
+
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			cancel()
+		}()
+
+		start := time.Now()
+		ok := l.waitIfActive(ctx, 2*time.Second)
+		assert.False(t, ok)
+		assert.True(t, time.Since(start) < 500*time.Millisecond)
 	})
 }

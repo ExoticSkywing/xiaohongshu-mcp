@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"os"
 
 	"github.com/sirupsen/logrus"
 	"github.com/xpzouying/xiaohongshu-mcp/browser"
@@ -21,7 +22,14 @@ func main() {
 	)
 	flag.BoolVar(&headless, "headless", true, "是否无头模式")
 	flag.StringVar(&port, "port", ":18060", "端口")
-	flag.StringVar(&site, "site", xiaohongshu.SiteXiaohongshu, "站点: xiaohongshu | rednote")
+	defaultSite := os.Getenv("XHS_SITE")
+	if defaultSite == "" {
+		defaultSite = os.Getenv("SITE")
+	}
+	if defaultSite == "" {
+		defaultSite = xiaohongshu.SiteXiaohongshu
+	}
+	flag.StringVar(&site, "site", defaultSite, "站点: xiaohongshu | rednote (也可通过环境变量 XHS_SITE/SITE 设置)")
 	flag.Parse()
 
 	if err := xiaohongshu.SetSite(site); err != nil {

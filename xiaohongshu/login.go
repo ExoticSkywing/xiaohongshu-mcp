@@ -30,8 +30,14 @@ func (a *LoginAction) CheckLoginStatus(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, errors.Wrap(err, "check login status failed")
 	}
+	if exists {
+		return true, nil
+	}
+	if user, userErr := a.CurrentUser(ctx); userErr == nil && user != nil && user.UserID != "" {
+		return true, nil
+	}
 
-	return exists, nil
+	return false, nil
 }
 
 // Login 打开站点首页,等待用户在窗口中完成登录(扫码/手机验证码均可)。
@@ -75,11 +81,19 @@ func (a *LoginAction) CurrentUser(ctx context.Context) (*CurrentUser, error) {
 func (a *LoginAction) Login(ctx context.Context) error {
 	pp := a.page.Context(ctx)
 	applySiteLocale(pp)
-	pp.MustNavigate(Site().Home).MustWaitLoad()
+
+	loginURL := Site().LoginURL
+	if loginURL == "" {
+		loginURL = Site().Home
+	}
+	pp.MustNavigate(loginURL).MustWaitLoad()
 
 	time.Sleep(2 * time.Second)
 
 	if exists, _, _ := pp.Has(Site().LoggedInSel); exists {
+		return nil
+	}
+	if user, err := a.CurrentUser(ctx); err == nil && user != nil && user.UserID != "" {
 		return nil
 	}
 
@@ -103,6 +117,11 @@ func (a *LoginAction) Login(ctx context.Context) error {
 				time.Sleep(2 * time.Second)
 				return nil
 			}
+			if user, err := a.CurrentUser(ctx); err == nil && user != nil && user.UserID != "" {
+				logrus.Info("检测到登录成功")
+				time.Sleep(2 * time.Second)
+				return nil
+			}
 		}
 	}
 }
@@ -111,16 +130,27 @@ func (a *LoginAction) FetchQrcodeImage(ctx context.Context) (string, bool, error
 	pp := a.page.Context(ctx)
 	applySiteLocale(pp)
 
-	pp.MustNavigate(Site().Home).MustWaitLoad()
+	loginURL := Site().LoginURL
+	if loginURL == "" {
+		loginURL = Site().Home
+	}
+	pp.MustNavigate(loginURL).MustWaitLoad()
 
 	time.Sleep(2 * time.Second)
 
 	if exists, _, _ := pp.Has(Site().LoggedInSel); exists {
 		return "", true, nil
 	}
+	if user, err := a.CurrentUser(ctx); err == nil && user != nil && user.UserID != "" {
+		return "", true, nil
+	}
 
-	// 获取二维码图片(海外站可能无扫码入口,此时返回错误,请改用窗口手动登录)
-	src, err := pp.MustElement(".login-container .qrcode-img").Attribute("src")
+	// 获取二维码图片(带超时保护，避免无声阻塞挂起)
+	el, err := pp.Timeout(15 * time.Second).Element(".login-container .qrcode-img")
+	if err != nil {
+		return "", false, errors.Wrap(err, "获取二维码元素失败")
+	}
+	src, err := el.Attribute("src")
 	if err != nil {
 		return "", false, errors.Wrap(err, "get qrcode src failed")
 	}
@@ -143,6 +173,9 @@ func (a *LoginAction) WaitForLogin(ctx context.Context) bool {
 		case <-ticker.C:
 			el, err := pp.Element(Site().LoggedInSel)
 			if err == nil && el != nil {
+				return true
+			}
+			if user, err := a.CurrentUser(ctx); err == nil && user != nil && user.UserID != "" {
 				return true
 			}
 		}

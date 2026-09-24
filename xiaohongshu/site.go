@@ -13,6 +13,7 @@ type SiteConfig struct {
 	Name        string // 站点标识
 	Base        string // 主站根,用于拼接笔记/用户/搜索链接
 	Home        string // 首页(explore),登录与导航入口
+	LoginURL    string // 登录页（国内站为 explore，海外站为 /login）
 	PublishURL  string // 创作平台图文/视频发布页
 	LoggedInSel string // 已登录判定:侧栏用户入口(class 选择器,语言无关)
 	ForceZhCN   bool   // 页面强制中文 locale(海外站默认英文,中文化后文本选择器可复用)
@@ -23,6 +24,7 @@ var sites = map[string]SiteConfig{
 		Name:        SiteXiaohongshu,
 		Base:        "https://www.xiaohongshu.com",
 		Home:        "https://www.xiaohongshu.com/explore",
+		LoginURL:    "https://www.xiaohongshu.com/explore",
 		PublishURL:  "https://creator.xiaohongshu.com/publish/publish?source=official",
 		LoggedInSel: `.main-container .user .link-wrapper .channel`,
 		ForceZhCN:   false,
@@ -31,6 +33,7 @@ var sites = map[string]SiteConfig{
 		Name:        SiteRednote,
 		Base:        "https://www.rednote.com",
 		Home:        "https://www.rednote.com/explore",
+		LoginURL:    "https://www.rednote.com/login",
 		PublishURL:  "https://creator.rednote.com/publish/publish?source=official",
 		LoggedInSel: `.main-container .user .link-wrapper .channel`,
 		ForceZhCN:   true,
